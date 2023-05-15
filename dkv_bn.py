@@ -1,8 +1,9 @@
 import torch
+
 from torch import nn, einsum
 from einops import rearrange, repeat
 
-from vector_quantize_pytorch import VectorQuantize
+from vq_ema import VectorQuantize
 
 # helper functions
 
@@ -20,7 +21,7 @@ class DiscreteKeyValueBottleneck(nn.Module):
         dim,
         *,
         num_memories,
-        num_memory_codebooks = 1,
+        num_memory_codebooks,
         encoder = None,
         dim_memory = None,
         pool_before = False,
@@ -30,14 +31,12 @@ class DiscreteKeyValueBottleneck(nn.Module):
         self.encoder = encoder
         self.pool_before = pool_before
         assert (dim % num_memory_codebooks) == 0, 'embedding dimension must be divisible by number of codes'
-
         self.vq = VectorQuantize(
-            dim = dim,
+            input_dim = dim,
+            n_heads = num_memory_codebooks,
+            heads_dim = dim_memory,
             codebook_size = num_memories,
-            heads = num_memory_codebooks,
-            codebook_dim = dim_memory,
-            separate_codebook_per_head = True,
-            **kwargs
+            decay = 0.8
         )
 
         dim_memory = default(dim_memory, dim // num_memory_codebooks)
@@ -48,7 +47,7 @@ class DiscreteKeyValueBottleneck(nn.Module):
         x,
         mask,
         token_type_ids,
-        only_key_optim,
+        key_optim,
         **kwargs
     ):
 
@@ -58,17 +57,21 @@ class DiscreteKeyValueBottleneck(nn.Module):
                 x = self.encoder(x, mask, token_type_ids,**kwargs)
                 if self.pool_before:
                     x = x[1]
-                    x.detach()
                     x = rearrange(x, 'b h -> b 1 h')
+                    #print(" x: ", x.shape, "\n values ", x) 
                 else:
-                    #x = x[0]
-                    x.detach()          
-        vq_out = self.vq(x)
-        if only_key_optim:
+                    x = x[0]
+                    
+        vq_out = self.vq(x, key_optim)
+        
+        if key_optim: # if we are optimizing keys with ema, break forward here
             return None
-        quantized, memory_indices, commit_loss = vq_out
+            
+        quantized, memory_indices = vq_out
+        
         #print("quantized shape ",quantized.shape, " /n memory_indices shape :", memory_indices.shape)
         #print(" values shape ", self.values.shape)
+        
         if memory_indices.ndim == 2:
             memory_indices = rearrange(memory_indices, '... -> ... 1')
 
