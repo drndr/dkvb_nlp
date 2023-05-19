@@ -10,7 +10,7 @@ from sklearn import metrics
 import wandb
 
 from dkv_bn import DiscreteKeyValueBottleneck
-from utils import load_dataset
+from utils import load_glue_dataset, load_cls_dataset
 from model import BERTwithBottleNeck
 
 import argparse
@@ -36,7 +36,7 @@ def discrete_key_init(n_epochs,training_loader,model,device):
 ###############################################################################
 # Train Model
 ###############################################################################
-def train_model(n_epochs, training_loader, validation1_loader, model, optimizer, criterion, device):
+def train_model(n_epochs, training_loader, validation1_loader, model, optimizer, criterion, device, wandb_enabled):
   
   model.train()
   loss_vals = []
@@ -93,7 +93,7 @@ def train_model(n_epochs, training_loader, validation1_loader, model, optimizer,
     if wandb_enabled:
         wandb.log({"Epoch": epoch,
                    "Train loss": train_loss,
-                   "Valid M loss":valid1_loss
+                   "Valid loss":valid1_loss
                  })
   return model
 
@@ -131,8 +131,10 @@ def main():
         wandb.init(project=args.dataset, entity="drndr21", name=str(args.epochs)+"e"+str(args.batch_size)+"b"+str(args.lr_global)+"Global"+str(args.lr_values)+"Values PB:"+str(args.pool_before))
     
     # Load to Dataset
-    train_set, val_set, n_classes = load_dataset(name=args.dataset, max_len=256)
-                
+    if args.dataset == "mrpc" or args.dataset == "mnli" or args.dataset == "qqp":
+        train_set, val_set, n_classes = load_glue_dataset(name=args.dataset, max_len=256)
+    else:
+        train_set, val_set, n_classes = load_cls_dataset(name=args.dataset, max_len=256)    
     # Create DataLoaders
     
     train_params = {'batch_size': args.batch_size,
@@ -167,7 +169,7 @@ def main():
     if args.wandb_enabled:
         wandb.watch(model)
     
-    trained_model = train_model(args.epochs, training_loader, validation_loader, key_optimized_model, optimizer, criterion, device)
+    trained_model = train_model(args.epochs, training_loader, validation_loader, key_optimized_model, optimizer, criterion, device, args.wandb_enabled)
     
     end = timer() # Stop measuring time for Train
     print("Key Init + Train time in minutes: ",(end-start)/60)

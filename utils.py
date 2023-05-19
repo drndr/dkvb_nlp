@@ -1,13 +1,77 @@
 import torch
 import datasets
 import pandas as pd
+import os.path as osp
+from tqdm import tqdm
 
 from transformers import BertTokenizer
 
 from torch.utils.data import Dataset,DataLoader
 
+
+def load_cls_dataset(name, max_len):
+    
+    print("Loading raw documents")
+    with open(osp.join('datasets_cls',name, name+'_raw.txt'), 'rb') as f:
+        raw_documents = [line.strip().decode('latin1') for line in tqdm(f)]
+    
+    train_labels = []
+    test_labels = []
+    train_data = []
+    test_data = []
+
+    print("Loading document metadata...")
+    doc_meta_path = osp.join('datasets_cls',name, name+'_meta.txt')
+    with open(doc_meta_path, 'r') as f:
+        i=0
+        for idx, line in tqdm(enumerate(f)):
+            __name, train_or_test, label = line.strip().split('\t')
+            if 'test' in train_or_test:
+                test_labels.append(label)
+                test_data.append(raw_documents[i])
+            elif 'train' in train_or_test:
+                train_labels.append(label)
+                train_data.append(raw_documents[i])
+            else:
+                raise ValueError("Doc is neither train nor test:"+ doc_meta_path + ' in line: ' + str(idx+1))
+            i+=1
+            
+    print("Encoding labels...")
+    label2index = {label: idx for idx, label in enumerate(set([*train_labels, *test_labels]))}
+    train_label_ids = [label2index[train_label] for train_label in tqdm(train_labels)]
+    test_label_ids = [label2index[test_label] for test_label in tqdm(test_labels)]
+
+    train_labels = train_label_ids
+    train_data = train_data
+    test_labels = test_label_ids
+    test_data = test_data    
+    
+    train_df = pd.DataFrame()
+    train_df['text'] = train_data
+    train_df['label'] = train_labels
+
+    test_df = pd.DataFrame()
+    test_df['text'] = test_data
+    test_df['label'] = test_labels
+
+    print("Number of train texts ",len(train_df['text']))
+    print("Number of train labels ",len(train_df['label']))
+    print("Number of test texts ",len(test_df['text']))
+    print("Number of test labels ",len(test_df['label']))
+    
+    tokenizer = BertTokenizer.from_pretrained('bert-base-uncased', do_lower_case=True)
+    
+    train_set =  CustomDataset(train_df, tokenizer, max_len, 'text', None)
+    val_set = CustomDataset(test_df, tokenizer, max_len, 'text', None)
+    
+    n_classes = len(set([*train_labels, *test_labels]))
+    print("Number of classes ", n_classes)
+    
+    return train_set, val_set, n_classes
+    
+    
 # load glue benchmarks into custom datasets
-def load_dataset(name, max_len):
+def load_glue_dataset(name, max_len):
     dataset = datasets.load_dataset(path='glue', name=name)
     
     print("Split names in ",name)
@@ -47,10 +111,11 @@ def load_dataset(name, max_len):
 # Custom Dataset for text pair inputs: <cls> text1 <sep> text2    
 class CustomDataset(Dataset):
 
-    def __init__(self, dataframe, tokenizer, max_len, feature1, feature2):
+    def __init__(self, dataframe, tokenizer, max_len, feature1, feature2=None):
         self.tokenizer = tokenizer
         self.feature1 = dataframe[feature1]
-        self.feature2 = dataframe[feature2]
+        if feature2 is not None:
+            self.feature2 = dataframe[feature2]
         self.targets = dataframe.label
         self.max_len = max_len
 
@@ -60,19 +125,33 @@ class CustomDataset(Dataset):
     def __getitem__(self, index):
         f1 = str(self.feature1[index])
         f1 = " ".join(f1.split())
-        f2 = str(self.feature2[index])
-        f2 = " ".join(f2.split())
-
-        inputs = self.tokenizer.encode_plus(
-            f1,
-            f2,
-            add_special_tokens=True,
-            max_length=self.max_len,
-            truncation=True,
-            padding='max_length',
-            return_token_type_ids=True,
-            verbose = False
-        )
+        if hasattr(self, 'feature2'):
+        
+            f2 = str(self.feature2[index])
+            f2 = " ".join(f2.split())
+        
+            inputs = self.tokenizer.encode_plus(
+                f1,
+                f2,
+                add_special_tokens=True,
+                max_length=self.max_len,
+                truncation=True,
+                padding='max_length',
+                return_token_type_ids=True,
+                verbose = False
+            )
+        else:
+        
+            inputs = self.tokenizer.encode_plus(
+                f1,
+                add_special_tokens=True,
+                max_length=self.max_len,
+                truncation=True,
+                padding='max_length',
+                return_token_type_ids=True,
+                verbose = False
+            )  
+            
         ids = inputs['input_ids']
         mask = inputs['attention_mask']
         token_type_ids = inputs["token_type_ids"]
