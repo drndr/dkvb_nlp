@@ -119,16 +119,18 @@ def main():
     
     parser.add_argument('dataset', default='mrpc', type=str, help="Valid choices: mrpc, mnli, qqp")
     parser.add_argument("epochs", default=1, type=int, help="Number of training epochs")
-    parser.add_argument("pool_before", default=True, type=bool, help="Pool before the bottleneck")
     parser.add_argument("batch_size", default=16, type=int, help="Batch size for training and testing")
     parser.add_argument("lr_global", default=3e-5, type=float, help="Learning rate for decoder")
     parser.add_argument("lr_values", default=3e-2, type=float, help="Learning rate for values in bottleneck")
-    parser.add_argument("wandb_enabled", default=False, type=bool, help="wandb monitoring")
+    parser.add_argument("pooling", default="cls", type=str, help="Type of poolings (cls, mean)")
+    parser.add_argument("--pool_before", action="store_true", help="enable pooling before bottleneck")
+    parser.add_argument("--wandb_enabled", action="store_true", help="wandb monitoring")
 
     args = parser.parse_args()
+    print("AAARG ", args.dataset,args.epochs,args.pool_before,args.batch_size)
 
     if args.wandb_enabled:
-        wandb.init(project=args.dataset, entity="drndr21", name=str(args.epochs)+"e"+str(args.batch_size)+"b"+str(args.lr_global)+"Global"+str(args.lr_values)+"Values PB:"+str(args.pool_before))
+        wandb.init(project=args.dataset, entity="drndr21", name=str(args.epochs)+"e "+str(args.batch_size)+"b "+str(args.lr_global)+"Global "+str(args.lr_values)+"Values "+args.pooling+"Ptype "+str(args.pool_before)+"PB")
     
     # Load to Dataset
     if args.dataset == "mrpc" or args.dataset == "mnli" or args.dataset == "qqp":
@@ -148,9 +150,9 @@ def main():
     training_loader = DataLoader(train_set, **train_params)
     validation_loader = DataLoader(val_set, **test_params)
     
-    model = BERTwithBottleNeck(args.pool_before, n_classes)
+    model = BERTwithBottleNeck(args.pool_before, args.pooling, n_classes)
     
-    optimizer = torch.optim.SGD([{"params": model.enc_with_bottleneck.parameters(), "lr":args.lr_values},
+    optimizer = torch.optim.AdamW([{"params": model.enc_with_bottleneck.parameters(), "lr":args.lr_values},
                                   {"params": model.l3.parameters()}],
                                   lr=args.lr_global)
             
@@ -161,7 +163,8 @@ def main():
     
     start = timer() # Start measuring time for Key Init, Train and Inference
     
-    key_optimized_model = discrete_key_init(5,training_loader, model, device)
+    key_optimized_model = discrete_key_init(3,training_loader, model, device)
+    #key_optimized_model = model
     
     end = timer() # Stop measuring time for Key Init
     print("Key Init time in minutes: ",(end-start)/60)

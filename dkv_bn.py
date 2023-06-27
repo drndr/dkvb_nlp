@@ -14,33 +14,43 @@ def default(val, d):
     return val if exists(val) else d
 
 # main class
-
 class DiscreteKeyValueBottleneck(nn.Module):
     def __init__(
         self,
         dim,
         *,
-        num_memories,
-        num_memory_codebooks,
+        num_key_segments = 64, # number of key segments
+        codebook_size = 4096,   # number of different discrete keys in bottleneck codebook
+        dim_key = 12,        # dimension of the key segments
+        dim_value = 12, 
+        decay = 1,
         encoder = None,
-        dim_memory = None,
+        decoder = None,
         pool_before = False,
+        pooling_type = "cls",
+        n_labels = 1,
         **kwargs
     ):
         super().__init__()
         self.encoder = encoder
+        self.decoder = decoder
         self.pool_before = pool_before
-        assert (dim % num_memory_codebooks) == 0, 'embedding dimension must be divisible by number of codes'
+        self.pooling_type = pooling_type
+        self.n_labels = n_labels
+        
+        assert (dim % num_key_segments) == 0, 'embedding dimension must be divisible by number of codes'
+        assert decoder =='mlp' or dim_value==self.n_labels, 'if decoder is values_softmax dim_values must equal to number of labels'
+        assert decoder =='values_softmax' or (num_key_segments*dim_value)==768, 'if decoder is mlp num_key_segments*dim_value must equal to encoder output dim'
+        
         self.vq = VectorQuantize(
             input_dim = dim,
-            n_heads = num_memory_codebooks,
-            heads_dim = dim_memory,
-            codebook_size = num_memories,
-            decay = 0.8
+            n_heads = num_key_segments,
+            heads_dim = dim_key,
+            codebook_size = codebook_size,
+            decay = decay
         )
 
-        dim_memory = default(dim_memory, dim // num_memory_codebooks)
-        self.values = nn.Parameter(torch.randn(num_memory_codebooks, num_memories, dim_memory))
+        self.values = nn.Parameter(torch.randn(num_key_segments, codebook_size, dim_value))
 
     def forward(
         self,
@@ -56,7 +66,10 @@ class DiscreteKeyValueBottleneck(nn.Module):
             with torch.no_grad():
                 x = self.encoder(x, mask, token_type_ids,**kwargs)
                 if self.pool_before:
-                    x = x[1]
+                    if self.pooling_type =="cls":
+                        x = x[1]
+                    if self.pooling_type =="mean":
+                        x = x[0].mean(dim=1)                    
                     x = rearrange(x, 'b h -> b 1 h')
                     #print(" x: ", x.shape, "\n values ", x) 
                 else:
@@ -85,8 +98,12 @@ class DiscreteKeyValueBottleneck(nn.Module):
 
         memories = values.gather(2, memory_indices)
         #print("memories ",memories.shape)
-
-        flattened_memories = rearrange(memories, 'b h n d -> b n (h d)')
-        #print("flattened memories ", flattened_memories.shape)
-
-        return flattened_memories
+        
+        memories = rearrange(memories, 'b h n d -> b n h d')
+        #print("memories ",memories.shape)
+        
+        if self.decoder =='mlp':
+            memories = rearrange(memories, 'b n h d -> b n (h d)')
+        #print("memories ", memories.shape)
+        
+        return memories#flattened_memories

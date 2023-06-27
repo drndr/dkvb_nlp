@@ -3,6 +3,8 @@ import datasets
 import pandas as pd
 import os.path as osp
 from tqdm import tqdm
+from collections import Counter
+
 
 from transformers import BertTokenizer
 
@@ -37,7 +39,7 @@ def load_cls_dataset(name, max_len):
             i+=1
             
     print("Encoding labels...")
-    label2index = {label: idx for idx, label in enumerate(set([*train_labels, *test_labels]))}
+    label2index = {label: idx for idx, label in enumerate(sorted(set([*train_labels, *test_labels])))}
     train_label_ids = [label2index[train_label] for train_label in tqdm(train_labels)]
     test_label_ids = [label2index[test_label] for test_label in tqdm(test_labels)]
 
@@ -68,6 +70,30 @@ def load_cls_dataset(name, max_len):
     print("Number of classes ", n_classes)
     
     return train_set, val_set, n_classes
+    
+
+
+# Create class incremental subsets from dataset (customized for R8)        
+def load_class_increment():
+    full_set = load_cls_dataset("R8",256)[0]
+    subset_list = []
+    for value in range(8):
+        subset_indices = []
+        for index in range(len(full_set)):
+            # Access the field value for the current sample
+            sample = full_set[index]
+            class_value = sample["targets"]
+
+            # Check if the field value matches the desired value
+            if class_value == value:
+                subset_indices.append(index)
+
+        # Create a Subset of the original dataset using the subset_indices
+        subset = torch.utils.data.Subset(full_set, subset_indices)
+        print("Class ",value," size ", len(subset))
+        subset_list.append(subset)
+    return subset_list
+    
     
     
 # load glue benchmarks into custom datasets

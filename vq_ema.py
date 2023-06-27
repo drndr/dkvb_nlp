@@ -31,7 +31,7 @@ class VectorQuantize(nn.Module):
         self.codebook_size = codebook_size
         
         key_embed = empty_init(n_heads,codebook_size,heads_dim) # init codebooks
-        #print("key embed initted ",key_embed[0])
+        #print("key embed initted ",key_embed[0].shape)
         
         self.register_buffer('key_embed', key_embed)  # register as non weight, but still part of model
         self.register_buffer('key_embed_avg', key_embed.clone()) # register as non weight, but still part of model
@@ -45,9 +45,11 @@ class VectorQuantize(nn.Module):
         x = x.float()
         shape, dtype = x.shape, x.dtype
         
-        if self.n_heads>1:
+        if self.n_heads>1:        
+            #x = rearrange(x, 'b t d -> b h t d', h = self.n_heads) Segment on tokens???
             ein_rhs_eq = 'h b t d' # h-head, b-batch, t-token, d-heads dimension
             x = rearrange(x, f'b t (h d) -> {ein_rhs_eq}', h = self.n_heads) # segment input into heads
+            
         
         shape, dtype = x.shape, x.dtype
         flatten = rearrange(x, 'h ... d -> h (...) d') # merge the batch and token dimensions         
@@ -69,7 +71,7 @@ class VectorQuantize(nn.Module):
         quantized = collect_embeddings(emb_ind, emb) # collect closest key for each head
         
         if key_optim:
-            emb_sum = einsum('h n d, h n c -> h c d', flatten, emb_onehot) # weigthed sum of embeddings
+            emb_sum = einsum('h n d, h n c -> h c d', flatten, emb_onehot) # elementwise multiplication and summation over axis n
             self.key_embed.data.lerp_(emb_sum, self.decay)
         
         #print("ke ",self.key_embed.data[0][0])
