@@ -74,7 +74,7 @@ def load_cls_dataset(name, max_len):
 
 
 # Create class incremental subsets from dataset (customized for R8)        
-def load_class_increment():
+def load_class_increment_r8():
     full_set = load_cls_dataset("R8",256)[0]
     subset_list = []
     for value in range(8):
@@ -94,6 +94,26 @@ def load_class_increment():
         subset_list.append(subset)
     return subset_list
     
+# Create class incremental subsets from dataset (customized for 20ng)        
+def load_class_increment_20ng():
+    full_set = load_cls_dataset("20ng",256)[0]
+    subset_list = []
+    for value in range(10):
+        subset_indices = []
+        for index in range(len(full_set)):
+            # Access the field value for the current sample
+            sample = full_set[index]
+            class_value = sample["targets"]
+
+            # Check if the field value matches the desired value
+            if class_value == value or class_value == value+10 :
+                subset_indices.append(index)
+
+        # Create a Subset of the original dataset using the subset_indices
+        subset = torch.utils.data.Subset(full_set, subset_indices)
+        print("Class ",value," and ", value+10, " size ", len(subset))
+        subset_list.append(subset)
+    return subset_list    
     
     
 # load glue benchmarks into custom datasets

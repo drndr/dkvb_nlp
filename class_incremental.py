@@ -10,7 +10,7 @@ from sklearn import metrics
 import wandb
 
 from dkv_bn import DiscreteKeyValueBottleneck
-from utils import load_glue_dataset, load_cls_dataset, load_class_increment
+from utils import load_glue_dataset, load_cls_dataset, load_class_increment_20ng, load_class_increment_r8
 from model import BERTwithBottleNeck, BERTbase
 
 import argparse
@@ -131,8 +131,8 @@ def main():
         #wandb.init(project="R8 increment", entity="drndr21", name=str(args.epochs)+"e "+str(args.batch_size)+"b "+str(args.lr_global)+"Global "+str(args.lr_values)+"Values "+args.pooling+"Ptype ")
     
     # Load to Dataset
-    class_sets = load_class_increment()
-    full_train, val_set, n_classes = load_cls_dataset("R8", max_len=512)
+    class_sets = load_class_increment_20ng()
+    full_train, val_set, n_classes = load_cls_dataset("20ng", max_len=512)
     
         
     # Create validation set here (is reused for all class increment testing)
