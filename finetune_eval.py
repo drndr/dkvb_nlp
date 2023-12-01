@@ -11,7 +11,7 @@ import wandb
 
 from dkv_bn import DiscreteKeyValueBottleneck
 from utils import load_glue_dataset, load_cls_dataset
-from model import BERTwithBottleNeck
+from model import BERTwithBottleNeck, ROBERTAwithBottleNeck
 
 import argparse
 
@@ -122,6 +122,7 @@ def main():
     parser.add_argument("batch_size", default=16, type=int, help="Batch size for training and testing")
     parser.add_argument("lr_global", default=3e-5, type=float, help="Learning rate for decoder")
     parser.add_argument("lr_values", default=3e-2, type=float, help="Learning rate for values in bottleneck")
+    parser.add_argument("decoder", default="mlp", type=str, help="Decoder type (mlp, softmax)")
     parser.add_argument("pooling", default="cls", type=str, help="Type of poolings (cls, mean)")
     parser.add_argument("--pool_before", action="store_true", help="enable pooling before bottleneck")
     parser.add_argument("--wandb_enabled", action="store_true", help="wandb monitoring")
@@ -130,13 +131,13 @@ def main():
     print("AAARG ", args.dataset,args.epochs,args.pool_before,args.batch_size)
 
     if args.wandb_enabled:
-        wandb.init(project=args.dataset, entity="drndr21", name=str(args.epochs)+"e "+str(args.batch_size)+"b "+str(args.lr_global)+"Global "+str(args.lr_values)+"Values "+args.pooling+"Ptype "+str(args.pool_before)+"PB")
+        wandb.init(project="ROBERTA_R8_Architectures_hiddenseg_lr", entity="drndr21") #name=str(args.epochs)+"e "+str(args.batch_size)+"b "+str(args.lr_global)+"Global "+str(args.lr_values)+"Values "+args.pooling+"Ptype "+str(args.pool_before)+"PB "+arg.decoder+"Decoder: ")
     
     # Load to Dataset
     if args.dataset == "mrpc" or args.dataset == "mnli" or args.dataset == "qqp":
-        train_set, val_set, n_classes = load_glue_dataset(name=args.dataset, max_len=256)
+        train_set, val_set, n_classes = load_glue_dataset(name=args.dataset, max_len=512)
     else:
-        train_set, val_set, n_classes = load_cls_dataset(name=args.dataset, max_len=256)    
+        train_set, val_set, n_classes = load_cls_dataset(name=args.dataset, max_len=512)    
     # Create DataLoaders
     
     train_params = {'batch_size': args.batch_size,
@@ -150,7 +151,7 @@ def main():
     training_loader = DataLoader(train_set, **train_params)
     validation_loader = DataLoader(val_set, **test_params)
     
-    model = BERTwithBottleNeck(args.pool_before, args.pooling, n_classes)
+    model = ROBERTAwithBottleNeck( args.decoder, 12, args.pool_before, args.pooling, n_classes)
     
     optimizer = torch.optim.AdamW([{"params": model.enc_with_bottleneck.parameters(), "lr":args.lr_values},
                                   {"params": model.l3.parameters()}],
@@ -177,20 +178,32 @@ def main():
     end = timer() # Stop measuring time for Train
     print("Key Init + Train time in minutes: ",(end-start)/60)
     
-    outputs_matched, targets_matched = test(validation_loader, trained_model, device)
+    outputs, targets = test(validation_loader, trained_model, device)
     
-    targets_matched=np.array(targets_matched).astype(int)
-    outputs_matched=np.array(outputs_matched).astype(int)
-    accuracy_matched = metrics.accuracy_score(targets_matched, outputs_matched)
-    f1_score_micro_matched = metrics.f1_score(targets_matched, outputs_matched, average='micro')
-    f1_score_macro_matched = metrics.f1_score(targets_matched, outputs_matched, average='macro')
+    targets=np.array(targets).astype(int)
+    outputs=np.array(outputs).astype(int)
+    accuracy = metrics.accuracy_score(targets, outputs)
+    f1_score_micro = metrics.f1_score(targets, outputs, average='micro')
+    f1_score_macro = metrics.f1_score(targets, outputs, average='macro')
     print("Evaluation of test set")
-    print(f"Accuracy Score = {accuracy_matched}")
-    print(f"F1 Score (Micro) = {f1_score_micro_matched}")
-    print(f"F1 Score (Macro) = {f1_score_macro_matched}")
+    print(f"Accuracy Score = {accuracy}")
+    print(f"F1 Score (Micro) = {f1_score_micro}")
+    print(f"F1 Score (Macro) = {f1_score_macro}")
+    if args.wandb_enabled:
+        wandb.log({"test acc":accuracy,
+                  "test microF1":f1_score_micro,
+                  "test_macroF1":f1_score_macro,
+                  "batch size: ": args.batch_size,
+                  "lr_decoder": args.lr_global,
+                  "lr_bottleneck": args.lr_values,
+                  "decoder":args.decoder,
+                  "pooling": args.pooling,
+                  "pool_before": args.pool_before})
+    #wandb.define_metric("test acc", summary="last")
     
     end = timer() # Stop measuring time for Train and Inference
     print("Key Init + Train + inference time in minutes: ",(end-start)/60)
+    
 
 if __name__ == '__main__':
     main()

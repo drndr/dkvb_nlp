@@ -2,16 +2,16 @@ import numpy as np
 import torch
 import os
 import transformers
-from torch.utils.data import DataLoader, RandomSampler
+from torch.utils.data import DataLoader
 from torch import cuda, nn
 from timeit import default_timer as timer
 from tqdm import tqdm, trange
 from sklearn import metrics
 import wandb
 
-from dkv_bn import DiscreteKeyValueBottleneck
-from utils import load_glue_dataset, load_cls_dataset, load_class_increment
-from model import BERTwithBottleNeck, BERTbase
+from dkv_bn2 import DiscreteKeyValueBottleneck
+from utils import load_glue_dataset, load_cls_dataset
+from model2 import BERTwithBottleNeck, ROBERTAwithBottleNeck
 
 import argparse
 
@@ -36,11 +36,11 @@ def discrete_key_init(n_epochs,training_loader,model,device):
 ###############################################################################
 # Train Model
 ###############################################################################
-def train_model(start_epoch, n_epochs, training_loader, validation1_loader, model, optimizer, criterion, device, wandb_enabled):
+def train_model(n_epochs, training_loader, validation1_loader, model, optimizer, criterion, device, wandb_enabled):
   
   model.train()
   loss_vals = []
-  train_iterator = trange(start_epoch,n_epochs+1, desc="Epoch")
+  train_iterator = trange(n_epochs, desc="Epoch")
   for epoch in train_iterator:
     print('############# Epoch {}: Training Start   #############'.format(epoch))
     epoch_iterator = tqdm(training_loader, desc="Iteration")
@@ -57,7 +57,7 @@ def train_model(start_epoch, n_epochs, training_loader, validation1_loader, mode
         targets = data['targets'].to(device, dtype=torch.long)
         mask = data['mask'].to(device, dtype=torch.long)
         token_type_ids = data['token_type_ids'].to(device, dtype = torch.long)
-        outputs = model(ids, mask, token_type_ids)
+        outputs = model(ids, mask, token_type_ids, key_optim=False)
         #Backward
         loss = criterion(outputs, targets)
         loss.backward()
@@ -117,32 +117,41 @@ def main():
 
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     
+    parser.add_argument('dataset', default='mrpc', type=str, help="Valid choices: mrpc, mnli, qqp")
     parser.add_argument("epochs", default=1, type=int, help="Number of training epochs")
     parser.add_argument("batch_size", default=16, type=int, help="Batch size for training and testing")
     parser.add_argument("lr_global", default=3e-5, type=float, help="Learning rate for decoder")
     parser.add_argument("lr_values", default=3e-2, type=float, help="Learning rate for values in bottleneck")
+    parser.add_argument("decoder", default="mlp", type=str, help="Decoder type (mlp, softmax)")
     parser.add_argument("pooling", default="cls", type=str, help="Type of poolings (cls, mean)")
+    parser.add_argument("--pool_before", action="store_true", help="enable pooling before bottleneck")
     parser.add_argument("--wandb_enabled", action="store_true", help="wandb monitoring")
 
     args = parser.parse_args()
+    print("AAARG ", args.dataset,args.epochs,args.pool_before,args.batch_size)
 
     if args.wandb_enabled:
-        wandb.init(project="R8 increment", entity="drndr21", name="bert bottleneck softmax")
-        #wandb.init(project="R8 increment", entity="drndr21", name=str(args.epochs)+"e "+str(args.batch_size)+"b "+str(args.lr_global)+"Global "+str(args.lr_values)+"Values "+args.pooling+"Ptype ")
+        wandb.init(project="ROBERTA_R8_Architectures_tokenseg", entity="drndr21") #name=str(args.epochs)+"e "+str(args.batch_size)+"b "+str(args.lr_global)+"Global "+str(args.lr_values)+"Values "+args.pooling+"Ptype "+str(args.pool_before)+"PB "+arg.decoder+"Decoder: ")
     
     # Load to Dataset
-    class_sets = load_class_increment()
-    full_train, val_set, n_classes = load_cls_dataset("R8", max_len=512)
+    if args.dataset == "mrpc" or args.dataset == "mnli" or args.dataset == "qqp":
+        train_set, val_set, n_classes = load_glue_dataset(name=args.dataset, max_len=512)
+    else:
+        train_set, val_set, n_classes = load_cls_dataset(name=args.dataset, max_len=512)    
+    # Create DataLoaders
     
-        
-    # Create validation set here (is reused for all class increment testing)
-    validation_params = {'batch_size': args.batch_size,
+    train_params = {'batch_size': args.batch_size,
                 'shuffle': True
-                }             
-    validation_loader = DataLoader(val_set, **validation_params)
+                }
+
+    test_params = {'batch_size': args.batch_size,
+                'shuffle': True
+                }
     
-    model = BERTwithBottleNeck("softmax", 12, False, args.pooling, n_classes)
-    #model = BERTbase(n_classes, False)
+    training_loader = DataLoader(train_set, **train_params)
+    validation_loader = DataLoader(val_set, **test_params)
+    
+    model = ROBERTAwithBottleNeck( args.decoder, 12, args.pool_before, args.pooling, n_classes)
     
     optimizer = torch.optim.AdamW([{"params": model.enc_with_bottleneck.parameters(), "lr":args.lr_values},
                                   {"params": model.l3.parameters()}],
@@ -155,14 +164,8 @@ def main():
     
     start = timer() # Start measuring time for Key Init, Train and Inference
     
-    
-    train_params = {'batch_size': args.batch_size,
-                    'shuffle': False
-                    }   
-    training_loader = DataLoader(full_train, **train_params)
-    trained_model = discrete_key_init(3,training_loader, model, device)
-    #trained_model = model
-    
+    key_optimized_model = discrete_key_init(3,training_loader, model, device)
+    #key_optimized_model = model
     
     end = timer() # Stop measuring time for Key Init
     print("Key Init time in minutes: ",(end-start)/60)
@@ -170,38 +173,37 @@ def main():
     if args.wandb_enabled:
         wandb.watch(model)
     
-    # Class incremental training and testing loop
-    start_epoch = 1
-    end_epoch = args.epochs+1
-    for i in range(len(class_sets)):
+    trained_model = train_model(args.epochs, training_loader, validation_loader, key_optimized_model, optimizer, criterion, device, args.wandb_enabled)
     
-        train_set = class_sets[i]
-        sampler = RandomSampler(train_set, replacement=True, num_samples=100)
-        
-        train_params = {'sampler':sampler,
-                        'batch_size': args.batch_size,
-                        'shuffle': False
-                       }   
-        training_loader = DataLoader(train_set, **train_params)        
-        #trained_model = discrete_key_init(1,training_loader, trained_model, device)
-        trained_model = train_model(start_epoch, end_epoch, training_loader, validation_loader, trained_model, optimizer, criterion, device, args.wandb_enabled)
-        start_epoch = start_epoch+args.epochs
-        end_epoch = end_epoch+args.epochs
+    end = timer() # Stop measuring time for Train
+    print("Key Init + Train time in minutes: ",(end-start)/60)
     
-        outputs_matched, targets_matched = test(validation_loader, trained_model, device)
+    outputs, targets = test(validation_loader, trained_model, device)
     
-        targets_matched=np.array(targets_matched).astype(int)
-        outputs_matched=np.array(outputs_matched).astype(int)
-        accuracy_matched = metrics.accuracy_score(targets_matched, outputs_matched)
-        f1_score_micro_matched = metrics.f1_score(targets_matched, outputs_matched, average='micro')
-        f1_score_macro_matched = metrics.f1_score(targets_matched, outputs_matched, average='macro')
-        print("Evaluation of test set")
-        print(f"Accuracy Score = {accuracy_matched}")
-        print(f"F1 Score (Micro) = {f1_score_micro_matched}")
-        print(f"F1 Score (Macro) = {f1_score_macro_matched}")
+    targets=np.array(targets).astype(int)
+    outputs=np.array(outputs).astype(int)
+    accuracy = metrics.accuracy_score(targets, outputs)
+    f1_score_micro = metrics.f1_score(targets, outputs, average='micro')
+    f1_score_macro = metrics.f1_score(targets, outputs, average='macro')
+    print("Evaluation of test set")
+    print(f"Accuracy Score = {accuracy}")
+    print(f"F1 Score (Micro) = {f1_score_micro}")
+    print(f"F1 Score (Macro) = {f1_score_macro}")
+    if args.wandb_enabled:
+        wandb.log({"test acc":accuracy,
+                  "test microF1":f1_score_micro,
+                  "test_macroF1":f1_score_macro,
+                  "batch size: ": args.batch_size,
+                  "lr_decoder": args.lr_global,
+                  "lr_bottleneck": args.lr_values,
+                  "decoder":args.decoder,
+                  "pooling": args.pooling,
+                  "pool_before": args.pool_before})
+    #wandb.define_metric("test acc", summary="last")
     
     end = timer() # Stop measuring time for Train and Inference
     print("Key Init + Train + inference time in minutes: ",(end-start)/60)
+    
 
 if __name__ == '__main__':
     main()

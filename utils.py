@@ -6,7 +6,7 @@ from tqdm import tqdm
 from collections import Counter
 
 
-from transformers import BertTokenizer
+from transformers import BertTokenizer, RobertaTokenizer
 
 from torch.utils.data import Dataset,DataLoader
 
@@ -61,7 +61,7 @@ def load_cls_dataset(name, max_len):
     print("Number of test texts ",len(test_df['text']))
     print("Number of test labels ",len(test_df['label']))
     
-    tokenizer = BertTokenizer.from_pretrained('bert-base-uncased', do_lower_case=True)
+    tokenizer = BertTokenizer.from_pretrained("bert-base-uncased", do_lower_case=True)
     
     train_set =  CustomDataset(train_df, tokenizer, max_len, 'text', None)
     val_set = CustomDataset(test_df, tokenizer, max_len, 'text', None)
