@@ -11,7 +11,7 @@ import wandb
 
 from dkv_bn import DiscreteKeyValueBottleneck
 from utils import load_glue_dataset, load_cls_dataset, load_class_increment_20ng, load_class_increment_r8
-from model import BERTwithBottleNeck, BERTbase
+from model import BERTwithBottleNeck, BERTbase, BERT_with_EWC
 
 import argparse
 
@@ -117,11 +117,11 @@ def main():
 
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     
-    parser.add_argument("epochs", default=1, type=int, help="Number of training epochs")
-    parser.add_argument("batch_size", default=16, type=int, help="Batch size for training and testing")
-    parser.add_argument("lr_global", default=3e-5, type=float, help="Learning rate for decoder")
-    parser.add_argument("lr_values", default=3e-2, type=float, help="Learning rate for values in bottleneck")
-    parser.add_argument("pooling", default="cls", type=str, help="Type of poolings (cls, mean)")
+    parser.add_argument("--epochs", default=1, type=int, help="Number of training epochs")
+    parser.add_argument("--batch_size", default=1, type=int, help="Batch size for training and testing")
+    parser.add_argument("--lr_global", default=3e-5, type=float, help="Learning rate for decoder")
+    parser.add_argument("--lr_values", default=3e-2, type=float, help="Learning rate for values in bottleneck")
+    parser.add_argument("--pooling", default="cls", type=str, help="Type of poolings (cls, mean)")
     parser.add_argument("--wandb_enabled", action="store_true", help="wandb monitoring")
 
     args = parser.parse_args()
@@ -132,8 +132,10 @@ def main():
     
     # Load to Dataset
     class_sets = load_class_increment_20ng()
-    full_train, val_set, n_classes = load_cls_dataset("20ng", max_len=512)
-    
+    # TODO reset
+    #full_train, val_set, n_classes = load_cls_dataset("20ng", max_len=512)
+    full_train, val_set, n_classes = load_cls_dataset("20ng", max_len=64)
+
         
     # Create validation set here (is reused for all class increment testing)
     validation_params = {'batch_size': args.batch_size,
@@ -141,12 +143,14 @@ def main():
                 }             
     validation_loader = DataLoader(val_set, **validation_params)
     
-    model = BERTwithBottleNeck("softmax", 12, False, args.pooling, n_classes)
+    #model = BERTwithBottleNeck("softmax", 12, False, args.pooling, n_classes)
     #model = BERTbase(n_classes, False)
+    model = BERT_with_EWC(n_classes, False)
     
-    optimizer = torch.optim.AdamW([{"params": model.enc_with_bottleneck.parameters(), "lr":args.lr_values},
-                                  {"params": model.l3.parameters()}],
-                                  lr=args.lr_global)
+    optimizer = torch.optim.Adam(model.model.parameters(), lr=args.lr_global)
+    # torch.optim.AdamW([{"params": model.enc_with_bottleneck.parameters(), "lr":args.lr_values},
+    #                              {"params": model.l3.parameters()}],
+    #                              lr=args.lr_global)
             
     criterion = nn.CrossEntropyLoss()
     
@@ -160,8 +164,8 @@ def main():
                     'shuffle': False
                     }   
     training_loader = DataLoader(full_train, **train_params)
-    trained_model = discrete_key_init(3,training_loader, model, device)
-    #trained_model = model
+    # trained_model = discrete_key_init(3,training_loader, model, device)
+    trained_model = model
     
     
     end = timer() # Stop measuring time for Key Init
@@ -176,6 +180,7 @@ def main():
     for i in range(len(class_sets)):
     
         train_set = class_sets[i]
+
         sampler = RandomSampler(train_set, replacement=True, num_samples=100)
         
         train_params = {'sampler':sampler,
@@ -184,7 +189,12 @@ def main():
                        }   
         training_loader = DataLoader(train_set, **train_params)        
         #trained_model = discrete_key_init(1,training_loader, trained_model, device)
+        print("TODO remove: train model")
         trained_model = train_model(start_epoch, end_epoch, training_loader, validation_loader, trained_model, optimizer, criterion, device, args.wandb_enabled)
+        print("TODO remove: Model ist trained")
+        # TODO just for ewc
+        trained_model.ewc(i, training_loader, device)
+        print("TODO remove: ewc finished")
         start_epoch = start_epoch+args.epochs
         end_epoch = end_epoch+args.epochs
     

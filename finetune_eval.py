@@ -117,13 +117,13 @@ def main():
 
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     
-    parser.add_argument('dataset', default='mrpc', type=str, help="Valid choices: mrpc, mnli, qqp")
-    parser.add_argument("epochs", default=1, type=int, help="Number of training epochs")
-    parser.add_argument("batch_size", default=16, type=int, help="Batch size for training and testing")
-    parser.add_argument("lr_global", default=3e-5, type=float, help="Learning rate for decoder")
-    parser.add_argument("lr_values", default=3e-2, type=float, help="Learning rate for values in bottleneck")
-    parser.add_argument("decoder", default="mlp", type=str, help="Decoder type (mlp, softmax)")
-    parser.add_argument("pooling", default="cls", type=str, help="Type of poolings (cls, mean)")
+    parser.add_argument('--dataset', default='mrpc', type=str, help="Valid choices: mrpc, mnli, qqp")
+    parser.add_argument("--epochs", default=1, type=int, help="Number of training epochs")
+    parser.add_argument("--batch_size", default=1, type=int, help="Batch size for training and testing")
+    parser.add_argument("--lr_global", default=3e-5, type=float, help="Learning rate for decoder")
+    parser.add_argument("--lr_values", default=3e-2, type=float, help="Learning rate for values in bottleneck")
+    parser.add_argument("--decoder", default="mlp", type=str, help="Decoder type (mlp, softmax)")
+    parser.add_argument("--pooling", default="cls", type=str, help="Type of poolings (cls, mean)")
     parser.add_argument("--pool_before", action="store_true", help="enable pooling before bottleneck")
     parser.add_argument("--wandb_enabled", action="store_true", help="wandb monitoring")
 
