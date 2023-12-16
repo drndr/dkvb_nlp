@@ -7,6 +7,7 @@ import numpy as np
 from tqdm import tqdm
 
 from dkv_bn import DiscreteKeyValueBottleneck
+from copy import deepcopy
 
 
 class BERTwithBottleNeck(nn.Module):
@@ -227,6 +228,11 @@ class BERT_with_EWC(nn.Module):
         outputs = self.model(ids, mask, token_type_ids)
         return outputs
 
+    def freeze_model(self, model):
+        for param in model.parameters():
+            param.requires_grad = False
+        return
+
     def criterion_ewc(self, t, output, targets):
         # Regularization for all previous tasks
         loss_reg = 0
@@ -237,6 +243,10 @@ class BERT_with_EWC(nn.Module):
         return self.ce(output, targets) + self.lamb * loss_reg
 
     def ewc(self, t, train_data, device):
+        self.model_old = deepcopy(self.model)
+        self.model_old.eval()
+        self.freeze_model(self.model_old)
+
         if t > 0:
             fisher_old = {}
             for n, _ in self.model.named_parameters():

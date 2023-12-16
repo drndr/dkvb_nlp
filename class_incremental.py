@@ -118,7 +118,7 @@ def main():
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     
     parser.add_argument("--epochs", default=1, type=int, help="Number of training epochs")
-    parser.add_argument("--batch_size", default=1, type=int, help="Batch size for training and testing")
+    parser.add_argument("--batch_size", default=16, type=int, help="Batch size for training and testing")
     parser.add_argument("--lr_global", default=3e-5, type=float, help="Learning rate for decoder")
     parser.add_argument("--lr_values", default=3e-2, type=float, help="Learning rate for values in bottleneck")
     parser.add_argument("--pooling", default="cls", type=str, help="Type of poolings (cls, mean)")
@@ -132,9 +132,7 @@ def main():
     
     # Load to Dataset
     class_sets = load_class_increment_20ng()
-    # TODO reset
-    #full_train, val_set, n_classes = load_cls_dataset("20ng", max_len=512)
-    full_train, val_set, n_classes = load_cls_dataset("20ng", max_len=64)
+    full_train, val_set, n_classes = load_cls_dataset("20ng", max_len=512)
 
         
     # Create validation set here (is reused for all class increment testing)
@@ -189,12 +187,9 @@ def main():
                        }   
         training_loader = DataLoader(train_set, **train_params)        
         #trained_model = discrete_key_init(1,training_loader, trained_model, device)
-        print("TODO remove: train model")
         trained_model = train_model(start_epoch, end_epoch, training_loader, validation_loader, trained_model, optimizer, criterion, device, args.wandb_enabled)
-        print("TODO remove: Model ist trained")
         # TODO just for ewc
         trained_model.ewc(i, training_loader, device)
-        print("TODO remove: ewc finished")
         start_epoch = start_epoch+args.epochs
         end_epoch = end_epoch+args.epochs
     

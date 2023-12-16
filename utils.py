@@ -37,9 +37,6 @@ def load_cls_dataset(name, max_len):
             else:
                 raise ValueError("Doc is neither train nor test:"+ doc_meta_path + ' in line: ' + str(idx+1))
             i+=1
-            # TODO remove
-            if i == 10000:
-                break
             
     print("Encoding labels...")
     label2index = {label: idx for idx, label in enumerate(sorted(set([*train_labels, *test_labels])))}
