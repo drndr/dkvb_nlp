@@ -1,4 +1,10 @@
-## Source Code for CONTINUAL LEARNING WITH A DISCRETE KEY-VALUE BOTTLENECK IN PRE-TRAINED LANGUAGE MODELS
+# Efficient Continual Learning for Small Language Models with a Discrete Key-Value Bottleneck
+
+This repository contains the code to reproduce our results in our paper 'Efficient Continual Learning for Small Language Models with a Discrete Key-Value Bottleneck'.
+
+Preprint link: https://arxiv.org/abs/2412.08528
+
+The paper proposes a discrete key-value bottleneck (DKVB) for encoder-only NLP models that allows efficient, localized updates for continual learning, reducing catastrophic forgetting and achieving competitive performance with lower computational cost — even in challenging single-head settings without task IDs.
 
 ### Folder Structure:
     ├── PyContinual                                # Forked from https://github.com/ZixuanKe/PyContinual Extended with DKVB, includes the main experiments  *note dsc dataset had to be removed due to size
